@@ -1,0 +1,430 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  html_notebook: default
+editor_options: 
+  chunk_output_type: inline
+---
+# verisetindeki degiskenlere ait bazi bilgiler
+age : yas
+sex : cinsiyet (1 = erkek; 0 = kadin)
+cp : gogus agrisi tipi
+trestbps : dinlenme kan basinci (hastaneye giriste mm Hg cinsinden)
+chol : serum kolestoral mg / dl cinsinden
+fbs : (aclik kan sekeri> 120 mg / dl) (1 = dogru; 0 = yanlis)
+restecg : elektrokardiyografik sonuclarin dinlenmesi
+thalach : elde edilen maksimum kalp atis hizi
+exang : egzersize bagli anjin (1 = evet; 0 = hayir)
+oldpeak : Dinlenmeye gore egzersiz ile induklenen ST depresyonu
+slope : Tepe egzersizi ST segmentinin egimi
+ca : floroskopi ile renklendirilmis ana damarlarin (0-3) sayisi
+thal : 3 = normal; 6 = sabit hata; 7 = tersinir kusur
+target : 1 veya 0
+
+#Veri setini yukleme
+```{r}
+#setwd("~/Desktop/datasciencewithr")
+#getwd()
+library(readr)
+heart <- read_csv("heart.csv")
+View(heart)
+library(dplyr)
+# verisetimizi dataframe_heart adli degiskene atadik
+dataframe_heart <- heart
+# asagida 0 ve 1 degerleri alan target degiskenini Yes ve No degerleri alacak sekile getirdik
+target <- ifelse(heart$target > 0.5, "Yes","No")
+dataframe_heart <- select(dataframe_heart, -c(target))
+dataframe_heart <- cbind(dataframe_heart,target)
+# veriye ilk bakis
+# degisken isimleri
+colnames(dataframe_heart)
+# kayit sayisi
+nrow(dataframe_heart)
+# degisken sayisi
+ncol(dataframe_heart)
+# verisetimizin ilk 6 degiskenini gozlemledik
+head(dataframe_heart)
+```
+#Veri seti On Isleme
+##Veri seti ozet istatistikleri
+```{r}
+#install.packages("dplyr")
+library("dplyr")
+# verisetinin ozetine ulastik
+# ornegin age degiskeni icin asagida goruldugu gibi median degeri 55 iken mean yani ortalama degeri 54.37. Bunun yanisira 3. ceyrekligin ortalamasi 61'dir. Yine veri setinde minimum yas degeri 29 iken maksimum deger 77 olarak verilmistir. Goruldugu gibi veriye bir genel bakis yapabildik.
+summary(dataframe_heart)
+# verisetinin ozetine ulastik
+# glimpse fonksiyonu ile de 303 gozlem (observation), 14 degisken oldugunu gozlemleyebildik. Ve yine bu degiskenlerin aldigi ornek birkac degere ulastik.
+glimpse(dataframe_heart)
+```
+<!-- ##Verideki bos degerlere ulasma -->
+```{r}
+# 9 degerlerini bos deger yaptik
+#dataframe_heart[dataframe_heart == 9] <- NA
+#dataframe_heart[dataframe_heart == -99] <- NA
+# bos degerlerin indekslerini bulduk
+#which(is.na(dataframe_heart))
+# kac tane bos deger olduguna ulastik
+# verisetimizde hic bos deger olmadigi icin bununla ilgili bir islem yapmadik
+sum(is.na(dataframe_heart))
+```
+##Veri setindeki bos degerlerin gorsellestirilmesi
+```{r}
+
+#install.packages("VIM")
+library(VIM)     
+# verisetindeki eksik gozlemleri gorsellestirdik fakat eksik gozlem olmadigi icin grafiklerimiz de bos geldi
+# buradan birliktelik cikarimlari da yapilabilir
+aggr_plot <- aggr(dataframe_heart, col=c('navyblue','red'), 
+                  numbers = TRUE, 
+                  sortVars = TRUE, 
+                  labels = names(dataframe_heart), 
+                  cex.axis=.7, 
+                  gap=3, 
+                  ylab=c("Eksik Degerlerin Oransal Gosterimi",
+                         "Eksikligin Veri Seti Icindeki Yapisi"))
+```
+##Veri setindeki bos degerli kayitlarin temizlenmesi
+```{r}
+# eksik veri bulunduran kayitlari sildik
+# dataframe_heart <- na.omit(dataframe_heart)
+# kac adet bos deger oldugunu bulduk
+#sum(is.na(dataframe_heart))
+# degiskenlerin ozet istatistiklerine ulastik
+# yina asagida ozet istatiktikler icin bir fonksiyon kullandik
+# bu fonksiyon funModelling kutuphanesinden cagirildi.
+# asagidaki gibi farkli ozet istatiktiklere ulasabiliriz. Bunun icinde standart sapma, deger araliklari gibi ozet bilgiler de bulunmaktadir
+library(funModeling)
+profiling_num(dataframe_heart)
+#plot(dataframe_heart)
+# surekli degikenlerin nasil dagildigini gorsellestirdik
+# asagida goruldugu gibi bu zamana kadar gordugumuz istatistikleri bir de grafik uzerine dokebildik.
+plot_num(dataframe_heart)
+# kategorik degiskenler icin kullanilan gorsellestirme
+# asagida goruldugu uzere tek kategorik degiskenimiz ve ayni zamanda hedef degiskenimiz olan target degiskenini grafik uzerinde gozlemledik. Ve gordukki verisetimizde 165 tane kalp rahatsizligi olan hasta varken 138 tane de hasta olmayan birey bulunmaktadir.
+freq(dataframe_heart)
+```
+##Test-Train ayrimi
+```{r}
+#install.packages("caret")
+library(caret)
+train_indeks <- createDataPartition(dataframe_heart$target, p = 0.8, list = FALSE, times = 1)
+train <- dataframe_heart[train_indeks,]
+test <- dataframe_heart[-train_indeks,]
+train_x <- train %>% dplyr::select(-target)
+train_y <- train$target
+test_x <- test %>% dplyr::select(-target)
+test_y <- test$target
+# eðitim verisinin hem bagimli hem de bagimsiz degiskenlerini tuttugumuz training adlý bir dataframe olusturduk
+training <- data.frame(train_x, target = train_y)
+testing <- data.frame(test_x, target = test_y)
+```
+#Lojistik Regresyon
+##Model
+```{r}
+# modelimizin bir lojistik regresyon olduðunu binomial deðiþkeni ile belirtiyoruz
+model_glm <- glm(target ~ ., 
+                 data = testing, 
+                 family = "binomial")
+summary(model_glm)
+options(scipen = 9)
+```
+
+##Tahmin
+```{r}
+head(predict(model_glm))
+# predict fonksiyonu target olarak type="link" þeklinde çalýþýr
+# fakat type="link" olarak tahmin yapýldýðýnda klasik regresyondaki gibi gözlem deðerlerinin tahmini yapiliyor
+# fakat biz siniflandirma yaptigimiz icin bize her bir gozlem icin olasilik degerleri lazim
+# bunun icin type="response" dedik
+head(predict(model_glm, type = "response"))
+# 0 ve 1 arasýndaki degerleri tahmin ettik
+ol <- predict(model_glm, type = "response")
+summary(ol)
+# tahminlerin gorsellestirilmesi
+hist(ol)
+# train hatasýný hesaplýyoruz
+model_glm_pred <- ifelse(predict(model_glm, type = "response") > 0.5, "Yes","No")
+table(model_glm_pred)
+
+```
+Siniflandirma Hatasi Tespiti ve Karmasiklik Matrisi
+```{r}
+# siniflandirma hatasinin tespiti fonksiyon olusturuldu
+class_err <- function(gercek, tahmin) {
+  mean(gercek != tahmin)
+}
+#yanlis siniflandirma orani
+class_err(testing$target, model_glm_pred)
+#dogruluk orani - accuracy
+1-class_err(testing$target, model_glm_pred)
+
+
+tb <- table(tahmin = model_glm_pred, 
+      gercek = testing$target)
+# CI accuracy deðerinin güven aralýðý
+km <- confusionMatrix(tb, positive = "Yes")
+
+c(km$overall["Accuracy"], km$byClass["Sensitivity"])
+
+```
+## Tahminlerin Gorsellestirilmesi
+```{r}
+# baðýmlý deðiþkenin en fazla baðýmlý olduðu deðiþkenle iliþkisini görselleþtirdik
+plot(as.numeric(testing$target)-1 ~ cp, data = testing,
+     col = "darkorange",
+     pch = "I", 
+     ylim = c(-0.2, 1))
+
+abline(h = 0, lty = 3)
+abline(h = 1, lty = 3)
+abline(h = 0.5, lty = 2)
+
+model_glm <- glm(target~ cp, 
+                 data = testing, 
+                 family = "binomial")
+# görselleþtirme için tahminimizi sadece cp deðiþkenine göre yapýyoruz
+curve(predict(model_glm, data.frame(cp = x), type ="response"),
+              add = TRUE,
+              lwd = 3,
+              col = "dodgerblue")
+
+```
+
+## ROC Egrisi
+```{r}
+# roc eðrisinin birinci  argümaný  baðýmlý deðiþken ikinci argümaný ise model yardýmýyla tahmin edilen baðýmlý deðiþkenin tahmini deðerleri 
+model_glm <- glm(target~ ., 
+                 data = testing, 
+                 family = "binomial")
+
+# bu sefer test verimizi tahmin ettik
+test_ol <- predict(model_glm, newdata = test_x, type = "response")
+#install.packages("pROC")
+library(pROC)
+a <- roc(test_y ~ test_ol, plot = TRUE, print.auc = TRUE)
+a$auc
+
+
+```
+
+
+## Model Tuning - Model Optimizasyonu
+```{r}
+# metodumuz cross-validation
+# 10 tekrardan oluþacak
+ctrl <- trainControl(method = "cv", 
+                     number = 10, 
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE,
+                     savePredictions = TRUE)
+glm_tune <- train(train_x, 
+                  train_y, 
+                  method = "glm",
+                  trControl = ctrl)
+
+glm_tune
+
+head(glm_tune$pred,10)
+head(glm_tune$pred$Yes)
+```
+
+```{r}
+# accuracy deðerine ulaþabildik
+defaultSummary(data.frame(obs = train_y, 
+                          pred = predict(glm_tune, train_x)))
+
+confusionMatrix(data = predict(glm_tune, train_x),
+                reference = train_y, positive = "Yes")
+
+confusionMatrix(data = predict(glm_tune, test_x),
+                reference = test_y, positive = "Yes")
+
+
+roc(glm_tune$pred$obs,
+    glm_tune$pred$Yes,
+    levels = rev(levels(glm_tune$pred$obs)),
+    plot = TRUE, print.auc = TRUE)
+a <- roc(test_y ~ test_ol, plot = TRUE,levels = rev(levels(glm_tune$pred$obs)), print.auc = TRUE)
+
+
+```
+
+
+# KNN
+## Model
+```{r}
+# Simdi de geldi bir knn modeli olusturmaya
+# yine test train ayrimimizi yapiyoruz
+train_indeks <- createDataPartition(dataframe_heart$target, p = 0.8, list = FALSE, times = 1)
+
+train <- dataframe_heart[train_indeks,]
+test <- dataframe_heart[-train_indeks,]
+
+train_x <- train %>% dplyr::select(-target)
+train_y <- train$target
+
+test_x <- test %>% dplyr::select(-target)
+test_y <- test$target
+
+training <- data.frame(train_x, target = train_y)
+
+knn_train <- train
+knn_test <- test
+
+knn_train <- knn_train %>% select(-target)
+knn_test <- knn_test %>% select(-target)
+# knn fonksiyonu lojistik regresyon fonksiyonundan farkli degerlerle calisir
+#install.packages("FNN")
+library("FNN")
+# knn modelimizi olusturdu
+knn_fit <- knn(train = knn_train, test = knn_test, cl = train_y, k = 3)
+# goruldugu gibi 60 degerden 23'une no 37'sine yes dedik
+nrow(knn_test)
+summary(knn_fit)
+```
+
+
+## Tahmin
+```{r}
+
+class_err <- function(gercek, tahmin) {
+  mean(gercek != tahmin)
+}
+# knn modelimiz icin test hatasini bulduk - lojistik regresyondan oldukca fazla cikti 0.43
+class_err(test_y, knn_fit)
+knn_fit <- knn(train = knn_train, test = knn_test, cl = train_y, k = 3)
+# dogruluk oranimiz ise 0.86 olarak belirlendi
+1-class_err(test_y, knn_fit)
+class_err(test_y, knn_fit3)
+knn_fit5 <- knn(train = knn_train, test = knn_test, cl = train_y, k = 5)
+class_err(test_y, knn_fit5)
+knn_fit10 <- knn(train = knn_train, test = knn_test, cl = train_y, k = 10)
+# goruldugu gibi farkli k degerleri icin farkli hata degerleri bulduk
+class_err(test_y, knn_fit10)
+
+```
+
+## Model Tuning - Model Optimizasyonu
+```{r}
+# knn modelimizi tune ediyoruz
+ctrl <- trainControl(method = "cv", 
+                     number = 10, 
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE,
+                     savePredictions = TRUE)
+# bir arama vektoru olusturuldu
+knn_grid <- data.frame(k = c(4*(0:5)+1, 20*(1:5)+1, 50*(2:9)+1))
+# 41 komsuluk degerinin en iyisi oldugu soylenmis
+knn_tune <- train(knn_train, train_y,
+                  method = "knn",
+                  metric = "ROC",
+                  preProc = c("center", "scale"),
+                  trControl = ctrl,
+                  tuneGrid = knn_grid)
+knn_tune
+plot(knn_tune)
+ 
+knn_tune$bestTune
+# en iyi k degeri secildi ve knn optimize edildi
+# ve asagida goruldugu gibi tahminlerimizi tune edilmis knn modelimiz ile 0.73 dogruluk oraniyla yapabiliyoruz
+confusionMatrix(knn_tune$pred$pred, knn_tune$pred$obs, positive = "Yes")
+```
+
+
+# YSA
+
+> Veri Seti
+
+
+
+```{r}
+summary(dataframe_heart)
+colnames(dataframe_heart)
+```
+```{r}
+
+as_tibble(dataframe_heart)
+#install.packages("GGally")
+library(GGally)
+ggpairs(dataframe_heart)
+# siniflarin dagilimi - frekansi
+table(dataframe_heart$target)
+# sinif dagilimlarinin orani
+table(dataframe_heart$target) / length(dataframe_heart$target)
+freq(dataframe_heart)
+
+# yapay sinir agi modelini kullanabilmek icin bir standartlastirma islemi uygulanmali - bunun icin asagidaki fonksiyon kullanilir - 0-1 donusumu
+scale01 <- function(x) {
+    (x - min(x))/(max(x) - min(x))
+}
+dataframe_heart <- dataframe_heart %>% mutate(age = scale01(age),
+                    sex = scale01(sex),
+                    cp = scale01(cp),
+                    trestbps = scale01(trestbps),
+                    chol = scale01(chol),
+                    fbs = scale01(fbs),
+                    restecg = scale01(restecg),
+                    thalach = scale01(thalach),
+                    exang = scale01(exang),
+                    oldpeak = scale01(oldpeak),
+                    slope = scale01(slope),
+                    ca = scale01(ca),
+                    thal = scale01(thal))
+
+
+# yine test train ayrimimizi yapiyoruz
+train_indeks <- createDataPartition(dataframe_heart$target, p = 0.8, list = FALSE, times = 1)
+train <- dataframe_heart[train_indeks,]
+test <- dataframe_heart[-train_indeks,]
+ysa_train_x <- train %>% dplyr::select(-target)
+ysa_train_y <- train$target
+ysa_test_x <- test %>% dplyr::select(-target)
+ysa_test_y <- test$target
+
+levels(train$target) <- make.names(levels(factor(train$target)))
+ysa_train_y <- train$target
+
+
+
+```
+
+## Model 
+
+```{r}
+set.seed(800)
+# neural net modeli kurduk
+#install.packages("nnet")
+library(nnet)
+nnet_fit <- nnet(target ~., dataframe_heart, size = 3, decay = 0.1)
+
+```
+
+
+
+
+
+
+
+
+## Tahmin
+
+```{r}
+# olasilik degerlerini bulduk
+head(predict(nnet_fit, ysa_train_x))
+# sinif degelerini bulduk
+head(predict(nnet_fit, ysa_train_x, type = "class"))
+
+# burada karsilastigim hata tahmin yapilacak bagimsiz degisken kumesi olarak ysa_train_x vermistik, fakat burada tahmin yaptigimiz veriseti test veriseti oldugu icin burada hata verdi.
+# pred <- predict(nnet_fit, ysa_train_x, type = "class")
+pred <- predict(nnet_fit, ysa_test_x, type = "class")
+pred 
+
+confusionMatrix(factor(pred), ysa_test_y, positive = "Yes")
+
+
+
+
+```
+
